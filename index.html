@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Search Reviews</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 2rem;
+      background-color: #000;
+      color: white;
+      text-align: center;
+    }
+    .header-image {
+      margin-bottom: 2rem;
+    }
+    .header-image img {
+      width: 60px;
+      height: auto;
+    }
+    .search-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 2rem;
+    }
+    input[type="text"] {
+      padding: 0.75rem 1rem;
+      font-size: 1rem;
+      width: 300px;
+      border: none;
+      border-radius: 9999px;
+      background: linear-gradient(to bottom, #2a62ff, #0030d1);
+      color: white;
+    }
+    button {
+      background-color: white;
+      border: none;
+      border-radius: 50%;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    button img {
+      width: 20px;
+      height: 20px;
+    }
+    .reviews-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1rem;
+    }
+    .review-card {
+      background: #1a1a1a;
+      border-radius: 16px;
+      padding: 1rem;
+      position: relative;
+      text-align: left;
+    }
+    .review-card h3 {
+      margin: 0 0 0.5rem;
+    }
+    .review-card .date {
+      font-size: 0.9rem;
+      color: gray;
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+    }
+    .stars {
+      color: gold;
+      font-size: 1.2rem;
+      margin: 0.5rem 0;
+    }
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .tag {
+      background-color: #0030D1;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 0.9rem;
+    }
+    .bad-tag {
+      background-color: #F10404;
+    }
+    #appStoreButton {
+      margin-top: 1.5rem;
+    }
+    #appStoreButton img {
+      width: 180px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header-image">
+    <img src="logo.png" alt="Logo" />
+  </div>
+
+  <div class="search-container">
+    <input type="text" id="usernameInput" placeholder="Search Username" />
+    <button onclick="searchReviews()">
+      <img src="magnifying-glass.png" alt="Search" />
+    </button>
+  </div>
+
+  <div id="appStoreButton">
+    <a href="https://apps.apple.com/us/app/review-hut/id6737490514" target="_blank">
+      <img src="AppStore.png" alt="Download on the App Store" />
+    </a>
+  </div>
+
+  <div class="reviews-grid" id="resultsContainer"></div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAy7isvF3tKX5e2C8UItBh_lo-o14y_zVE",
+      authDomain: "review-hut-bcff1.firebaseapp.com",
+      projectId: "review-hut-bcff1",
+      appId: "1:901708014175:web:6d6a22a703e94cd311b1ea"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    document.getElementById("appStoreButton").style.display = "block";
+
+    async function searchReviews() {
+      const username = document.getElementById("usernameInput").value.trim().toLowerCase();
+      const container = document.getElementById("resultsContainer");
+      container.innerHTML = "";
+      document.getElementById("appStoreButton").style.display = "none";
+
+      if (!username) return alert("Please enter a username.");
+
+      try {
+        const userSnap = await db.collection("Users")
+          .where("usernameLowercased", "==", username)
+          .limit(1)
+          .get();
+
+        let userFound = false;
+        let reviewerIDTo = null;
+
+        if (!userSnap.empty) {
+          reviewerIDTo = userSnap.docs[0].id;
+          userFound = true;
+
+          const reviewsSnap = await db.collection("Reviews")
+            .where("reviewerIDTo", "==", reviewerIDTo)
+            .orderBy("dateAdded", "desc")
+            .limit(10)
+            .get();
+
+          if (reviewsSnap.empty) {
+            container.innerHTML = "<p>No reviews found for this user.</p>";
+          } else {
+            reviewsSnap.forEach(doc => {
+              const data = doc.data();
+              const date = data.dateAdded?.toDate?.().toDateString?.() || "";
+              const stars = "\u2B50".repeat(data.stars);
+              const goodTags = (data.goodTags || []).map(tag => `<span class='tag'>${tag}</span>`).join("");
+              const badTags = (data.badTags || []).map(tag => `<span class='tag bad-tag'>${tag}</span>`).join("");
+
+              const card = document.createElement("div");
+              card.className = "review-card";
+              card.innerHTML = `
+                <h3>${data.reviewerFromUsername || "Anonymous"}</h3>
+                <div class="date">${date}</div>
+                <div class="stars">${stars}</div>
+                <div class="tags">${goodTags} ${badTags}</div>
+              `;
+              container.appendChild(card);
+            });
+          }
+        } else {
+          container.innerHTML = "<p>No user found.</p>";
+        }
+
+        const search = {
+          searchedUsername: username,
+          searchedUsernameLowercased: username.toLowerCase(),
+          dateSearched: new Date(),
+          searchedUserExists: userFound,
+          userUIDSearcher: "anonymous"
+        };
+
+        if (userFound) {
+          search.searchedUserID = reviewerIDTo;
+        }
+
+        await db.collection("Searches").add(search);
+
+      } catch (err) {
+        console.error("Error fetching reviews:", err);
+        container.innerHTML = "<p>Error fetching reviews. Check console.</p>";
+      }
+    }
+  </script>
+</body>
+</html>
