@@ -122,103 +122,113 @@
   <div class="reviews-grid" id="resultsContainer"></div>
 
   <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyAy7isvF3tKX5e2C8UItBh_lo-o14y_zVE",
-      authDomain: "review-hut-bcff1.firebaseapp.com",
-      projectId: "review-hut-bcff1",
-      appId: "1:901708014175:web:6d6a22a703e94cd311b1ea"
-    };
+  const firebaseConfig = {
+    apiKey: "AIzaSyAy7isvF3tKX5e2C8UItBh_lo-o14y_zVE",
+    authDomain: "review-hut-bcff1.firebaseapp.com",
+    projectId: "review-hut-bcff1",
+    appId: "1:901708014175:web:6d6a22a703e94cd311b1ea"
+  };
 
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
 
-    document.getElementById("appStoreButton").style.display = "block";
+  document.getElementById("appStoreButton").style.display = "block";
 
-    async function searchReviews() {
-  const username = document.getElementById("usernameInput").value.trim().toLowerCase();
-  const container = document.getElementById("resultsContainer");
-  container.innerHTML = "";
-  document.getElementById("appStoreButton").style.display = "none";
+  async function searchReviews(presetUsername = null) {
+    const username = (presetUsername || document.getElementById("usernameInput").value).trim().toLowerCase();
+    const container = document.getElementById("resultsContainer");
+    container.innerHTML = "";
+    document.getElementById("appStoreButton").style.display = "none";
 
-  if (!username) return alert("Please enter a username.");
+    if (!username) return alert("Please enter a username.");
 
-  try {
-    const userSnap = await db.collection("Users")
-      .where("usernameLowercased", "==", username)
-      .limit(1)
-      .get();
-
-    let userFound = false;
-    let reviewerIDTo = null;
-
-    if (!userSnap.empty) {
-      reviewerIDTo = userSnap.docs[0].id;
-      userFound = true;
-
-      const reviewsSnap = await db.collection("Reviews")
-        .where("reviewerIDTo", "==", reviewerIDTo)
-        .orderBy("dateAdded", "desc")
-        .limit(10)
+    try {
+      const userSnap = await db.collection("Users")
+        .where("usernameLowercased", "==", username)
+        .limit(1)
         .get();
 
-      if (reviewsSnap.empty) {
-        container.innerHTML = "<p>No reviews found for this user.</p>";
-      } else {
-        const reviews = reviewsSnap.docs;
+      let userFound = false;
+      let reviewerIDTo = null;
 
-        // Fetch usernames in parallel
-        const reviewPromises = reviews.map(async (doc) => {
-          const data = doc.data();
-          const date = data.dateAdded?.toDate?.().toDateString?.() || "";
-          const stars = "⭐️".repeat(data.stars);
-          const goodTags = (data.goodTags || []).map(tag => `<span class='tag'>${tag}</span>`).join("");
-          const badTags = (data.badTags || []).map(tag => `<span class='tag bad-tag'>${tag}</span>`).join("");
+      if (!userSnap.empty) {
+        reviewerIDTo = userSnap.docs[0].id;
+        userFound = true;
 
-          let reviewerUsername = "Anonymous";
+        const reviewsSnap = await db.collection("Reviews")
+          .where("reviewerIDTo", "==", reviewerIDTo)
+          .orderBy("dateAdded", "desc")
+          .limit(10)
+          .get();
 
-          if (data.reviewerIDFrom) {
-            const userDoc = await db.collection("Users").doc(data.reviewerIDFrom).get();
-            if (userDoc.exists) {
-              reviewerUsername = userDoc.data().username || "Anonymous";
+        if (reviewsSnap.empty) {
+          container.innerHTML = "<p>No reviews found for this user.</p>";
+        } else {
+          const reviews = reviewsSnap.docs;
+
+          // Fetch usernames in parallel
+          const reviewPromises = reviews.map(async (doc) => {
+            const data = doc.data();
+            const date = data.dateAdded?.toDate?.().toDateString?.() || "";
+            const stars = "⭐️".repeat(data.stars);
+            const goodTags = (data.goodTags || []).map(tag => `<span class='tag'>${tag}</span>`).join("");
+            const badTags = (data.badTags || []).map(tag => `<span class='tag bad-tag'>${tag}</span>`).join("");
+
+            let reviewerUsername = "Anonymous";
+
+            if (data.reviewerIDFrom) {
+              const userDoc = await db.collection("Users").doc(data.reviewerIDFrom).get();
+              if (userDoc.exists) {
+                reviewerUsername = userDoc.data().username || "Anonymous";
+              }
             }
-          }
 
-          const card = document.createElement("div");
-          card.className = "review-card";
-          card.innerHTML = `
-            <h3>${reviewerUsername}</h3>
-            <div class="date">${date}</div>
-            <div class="stars">${stars}</div>
-            <div class="tags">${goodTags} ${badTags}</div>
-          `;
-          container.appendChild(card);
-        });
+            const card = document.createElement("div");
+            card.className = "review-card";
+            card.innerHTML = `
+              <h3>${reviewerUsername}</h3>
+              <div class="date">${date}</div>
+              <div class="stars">${stars}</div>
+              <div class="tags">${goodTags} ${badTags}</div>
+            `;
+            container.appendChild(card);
+          });
 
-        await Promise.all(reviewPromises);
+          await Promise.all(reviewPromises);
+        }
+      } else {
+        container.innerHTML = "<p>No user found.</p>";
       }
-    } else {
-      container.innerHTML = "<p>No user found.</p>";
+
+      const search = {
+        searchedUsername: username,
+        searchedUsernameLowercased: username.toLowerCase(),
+        dateSearched: new Date(),
+        searchedUserExists: userFound,
+        userUIDSearcher: "anonymous"
+      };
+
+      if (userFound) {
+        search.searchedUserID = reviewerIDTo;
+      }
+
+      await db.collection("Searches").add(search);
+
+    } catch (err) {
+      console.error("Error fetching reviews:", err);
+      container.innerHTML = "<p>Error fetching reviews. Check console.</p>";
     }
-
-    const search = {
-      searchedUsername: username,
-      searchedUsernameLowercased: username.toLowerCase(),
-      dateSearched: new Date(),
-      searchedUserExists: userFound,
-      userUIDSearcher: "anonymous"
-    };
-
-    if (userFound) {
-      search.searchedUserID = reviewerIDTo;
-    }
-
-    await db.collection("Searches").add(search);
-
-  } catch (err) {
-    console.error("Error fetching reviews:", err);
-    container.innerHTML = "<p>Error fetching reviews. Check console.</p>";
   }
-}
+
+  // URL Parameter logic
+  window.addEventListener("DOMContentLoaded", () => {
+    const params = new URLSearchParams(window.location.search);
+    const usernameParam = params.get('username');
+    if (usernameParam) {
+      document.getElementById("usernameInput").value = usernameParam;
+      searchReviews(usernameParam);
+    }
+  });
 </script>
 </body>
 </html>
